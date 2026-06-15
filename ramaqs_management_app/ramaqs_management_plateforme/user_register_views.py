@@ -1,12 +1,13 @@
 # ramaqs_management_plateforme/user_register_views.py
 
 import logging
+import uuid
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.utils import timezone
 from django.contrib.auth.hashers import make_password
-from .models import Utilisateur, TenantMembership
+from .models import Utilisateur, TenantMembership, Tenant
 from .serializers import UtilisateurSerializer
 from .services.notification_service import NotificationService
 from .services.email_service import EmailService
@@ -39,8 +40,13 @@ class UserRegisterView(generics.CreateAPIView):
         email = request.data.get('email')
         role = request.data.get('role')
         nom = request.data.get('nom')
+        password = request.data.get('password')  # ✅ Récupérer mot de passe
+         # 5️⃣ Lie l'utilisateur au tenant (organisation)
+        tenant = request.tenant if hasattr(request, 'tenant') else None
         
-        logger.info(f"Tentative d'inscription: email={email}, role={role}, nom={nom}")
+        
+        
+        
         
         # 1️⃣ Vérifie si l'email existe déjà
         if Utilisateur.objects.filter(email=email).exists():
@@ -88,6 +94,11 @@ class UserRegisterView(generics.CreateAPIView):
                 {'error': f'Erreur lors de la création: {str(e)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # ✅ Stocker le mot de passe choisi par l'utilisateur
+        if password:
+            user.set_password(password)
+            user.save()
         
         # 5️⃣ Lie l'utilisateur au tenant (organisation)
         tenant = request.tenant if hasattr(request, 'tenant') else None
@@ -207,7 +218,9 @@ class UserApproveRejectView(generics.UpdateAPIView):
         user.statut_approbation = 'approved'
         user.date_approbation = timezone.now()
         user.approuve_par = admin_user
-        user.is_active = True
+        user.is_active = true  # ← C'est bon, mais assurez-vous que actif est synchronisé
+        user.actif = true  # ← Synchronisez aussi votre champ actif
+        user.doit_changer_mot_de_passe = True  # ✅ Forcer le changement
         user.set_password(temp_password)
         user.save()
         

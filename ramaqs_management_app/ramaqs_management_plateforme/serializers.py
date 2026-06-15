@@ -25,6 +25,7 @@ class UtilisateurSerializer(serializers.ModelSerializer):
         model = Utilisateur
         fields = [
             'id', 
+            'username',
             'nom', 
             'email', 
             'telephone', 
@@ -41,6 +42,7 @@ class UtilisateurSerializer(serializers.ModelSerializer):
             'is_active',
             'entreprise',
             'poste',
+            'doit_changer_mot_de_passe',  # ← AJOUTER SI EXISTE
         ]
         read_only_fields = ['id', 'date_creation', 'dernier_connexion']
 
@@ -689,25 +691,67 @@ from rest_framework import serializers
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     
     def validate(self, attrs):
+        print("=" * 60)
+        print("🔐 [LOGIN] Début de la validation")
+        print(f"📥 Données reçues: {attrs}")
+        
         # Récupérer l'email et le password
         email = attrs.get('email', attrs.get('username'))
         password = attrs.get('password')
         print(f"🔐 Tentative de connexion: email={email}")
+        print(f"📧 Email extrait: '{email}'")
+        print(f"🔑 Longueur du mot de passe: {len(password) if password else 0}")
         
-        # Authentifier avec l'email
-        user = authenticate(username=email, password=password)
+        # 1️⃣ Vérifier si l'utilisateur existe
+        from ramaqs_management_plateforme.models import Utilisateur
+        from django.contrib.auth.hashers import check_password
+        from rest_framework_simplejwt.tokens import RefreshToken
         
-        if not user:
-            print(f"❌ Utilisateur non trouvé ou mot de passe incorrect: {email}")
+        print("\n🔍 Recherche de l'utilisateur par email...")
+        try:
+            user = Utilisateur.objects.get(email=email)
+            print(f"✅ Utilisateur trouvé dans la base:")
+            print(f"   - Email: {user.email}")
+            print(f"   - statut_approbation: {user.statut_approbation}")
+            print(f"   - is_active: {user.is_active}")
+        except Utilisateur.DoesNotExist:
+            print(f"❌ Aucun utilisateur trouvé avec l'email: '{email}'")
             raise serializers.ValidationError('Email ou mot de passe incorrect')
         
+        # 2️⃣ Vérifier le mot de passe
+        print("\n🔐 Vérification du mot de passe...")
+        password_correct = check_password(password, user.password)
+        print(f"Résultat check_password: {password_correct}")
+        
+        if not password_correct:
+            print(f"❌ Mot de passe incorrect pour: {email}")
+            raise serializers.ValidationError('Email ou mot de passe incorrect')
+        
+        print("✅ Mot de passe correct!")
+        
+        # 3️⃣ ✅ VÉRIFIER PENDING (UN SEUL BLOC, AVANT is_active)
+        if user.statut_approbation == 'pending':
+            print(f"⏳ Compte en attente d'approbation: {email}")
+            raise serializers.ValidationError(
+                'Votre compte est en attente d\'approbation. '
+                'Vous recevrez un email une fois votre compte validé par la direction.'
+            )
+        
+        # 4️⃣ Vérifier rejected
+        if user.statut_approbation == 'rejected':
+            print(f"❌ Compte rejeté: {email}")
+            raise serializers.ValidationError(
+                'Votre compte a été rejeté. Veuillez contacter l\'administrateur.'
+            )
+        
+        # 5️⃣ Vérifier is_active (après pending et rejected)
         if not user.is_active:
             print(f"❌ Compte désactivé: {email}")
             raise serializers.ValidationError('Compte désactivé')
         
         print(f"✅ Utilisateur authentifié: {user.email}, rôle: {user.role}")
         
-        # Générer les tokens
+        # 6️⃣ Générer les tokens
         refresh = RefreshToken.for_user(user)
         
         # Récupérer le membership
@@ -715,7 +759,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         if hasattr(user, 'memberships') and user.memberships.exists():
             membership = user.memberships.first()
         
-        # ✅ STRUCTURE DE RÉPONSE CORRECTE (sans doublons)
+        # Structure de la réponse
         data = {
             'access': str(refresh.access_token),
             'refresh': str(refresh),
@@ -725,9 +769,13 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'email': user.email,
                 'role': membership.role if membership else user.role,
                 'is_active': user.is_active,
-                'statut_approbation': getattr(user, 'statut_approbation', None),
+                'statut_approbation': user.statut_approbation,
             }
         }
+        
+        # Vérifier si l'utilisateur doit changer son mot de passe
+        if hasattr(user, 'doit_changer_mot_de_passe') and user.doit_changer_mot_de_passe:
+            data['doit_changer_mot_de_passe'] = True
         
         # Ajouter les infos tenant si disponible
         if membership and membership.tenant:
@@ -738,6 +786,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             }
         
         print(f"✅ Connexion réussie pour {user.email}")
-        print(f"📤 Réponse envoyée: access={data['access'][:50]}...")
+        print("=" * 60)
         
         return data

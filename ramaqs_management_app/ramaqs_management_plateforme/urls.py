@@ -8,6 +8,7 @@ from django.conf.urls.static import static
 # ✅ Importer depuis le fichier views.py (principal)
 from . import views
 from .views import *
+from .views import ChangerMotDePasseView
 
 
 from .user_register_views import (
@@ -66,7 +67,7 @@ urlpatterns = [
     path('auth/validate-reset-token/', ValidateResetTokenView.as_view(), name='validate-reset-token'),
     path('auth/reset-password/', ResetPasswordView.as_view(), name='reset-password'),
     path('projets/<uuid:projet_id>/consultants/', ChefProjetConsultantsView.as_view(), name='projet-consultants'),
-    path('auth/register/', RegisterView.as_view(), name='register'),
+    path('auth/register/', UserRegisterView.as_view(), name='register'),
     path('auth/me/', CurrentUserView.as_view(), name='current-user'),
     path('api/utilisateurs/<uuid:pk>/', UtilisateurDetailView.as_view(), name='utilisateur-detail'),
     path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
@@ -86,6 +87,7 @@ urlpatterns = [
     
     # 📋 LISTE DES UTILISATEURS À APPROUVER
     path('users/pending/', UserListView.as_view(), name='user-list'),
+    path('auth/changer-mot-de-passe/', ChangerMotDePasseView.as_view(), name='changer-mot-de-passe'),
 ]
 
 if settings.DEBUG:

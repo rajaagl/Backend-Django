@@ -9,6 +9,9 @@ from rest_framework import viewsets, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 import logging
+from rest_framework.views import APIView
+
+
 logger = logging.getLogger(__name__)
 from .models import (
     Projet, RoleChoices, Tache, Consultant, Client, ChefProjet, 
@@ -909,3 +912,35 @@ class TacheDetailView(generics.RetrieveUpdateDestroyAPIView):
         }
         
         return Response(data)
+
+# views.py
+
+
+
+class ChangerMotDePasseView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        user = request.user
+        ancien_mot_de_passe = request.data.get('ancien_mot_de_passe')
+        nouveau_mot_de_passe = request.data.get('nouveau_mot_de_passe')
+        confirmation = request.data.get('confirmation')
+        
+        # Vérifier l'ancien mot de passe
+        if not user.check_password(ancien_mot_de_passe):
+            return Response({'error': 'Ancien mot de passe incorrect'}, status=400)
+        
+        # Vérifier la confirmation
+        if nouveau_mot_de_passe != confirmation:
+            return Response({'error': 'Les mots de passe ne correspondent pas'}, status=400)
+        
+        # Vérifier la longueur
+        if len(nouveau_mot_de_passe) < 6:
+            return Response({'error': 'Le mot de passe doit contenir au moins 6 caractères'}, status=400)
+        
+        # Changer le mot de passe
+        user.set_password(nouveau_mot_de_passe)
+        user.doit_changer_mot_de_passe = False
+        user.save()
+        
+        return Response({'message': 'Mot de passe changé avec succès'})

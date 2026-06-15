@@ -76,7 +76,8 @@ class Utilisateur(AbstractUser):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='consultant') 
     date_debut_partenariat = models.DateField(blank=True, null=True)
     date_fin_partenariat = models.DateField(blank=True, null=True)
-    
+     # ✅ AJOUTER CE CHAMP
+    doit_changer_mot_de_passe = models.BooleanField(default=False)
     groups = models.ManyToManyField(
         'auth.Group',
         related_name='utilisateur_set',
