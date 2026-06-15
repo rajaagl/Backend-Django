@@ -23,10 +23,26 @@ from .services.notification_service import NotificationService
 class UtilisateurSerializer(serializers.ModelSerializer):
     class Meta:
         model = Utilisateur
-        fields = ['id', 'nom', 'email', 'telephone', 'photo_profil', 
-                  'date_creation', 'dernier_connexion', 'actif']
+        fields = [
+            'id', 
+            'nom', 
+            'email', 
+            'telephone', 
+            'photo_profil', 
+            'date_creation', 
+            'dernier_connexion', 
+            'actif',
+            # ✅ AJOUTER CES CHAMPS POUR L'APPROBATION
+            'role',
+            'statut_approbation',
+            'justification_rejet',
+            'date_approbation',
+            'approuve_par',
+            'is_active',
+            'entreprise',
+            'poste',
+        ]
         read_only_fields = ['id', 'date_creation', 'dernier_connexion']
-
 
 class TenantSerializer(serializers.ModelSerializer):
     class Meta:
@@ -112,12 +128,39 @@ class ConsultantSerializer(serializers.ModelSerializer):
         return 0
 
 
+# serializers.py
+from rest_framework import serializers
+from .models import Client
+
 class ClientSerializer(serializers.ModelSerializer):
+    status_label = serializers.SerializerMethodField()
+    
     class Meta:
         model = Client
-        fields = ['id', 'nom', 'email', 'telephone', 'photo_profil',
-                  'societe', 'secteur_activite', 'numero_siret', 'date_creation', 'actif']
-        read_only_fields = ['id', 'date_creation']
+        fields = [
+            'id', 
+            'nom', 
+            'email', 
+            'telephone', 
+            'photo_profil',
+            'entreprise',        # ← au lieu de 'societe'
+            'poste',
+            'statut_approbation',
+            'status_label',
+            'justification_rejet',
+            'date_creation', 
+            'actif'
+        ]
+        read_only_fields = ['id', 'date_creation', 'statut_approbation']
+    
+    def get_status_label(self, obj):
+        labels = {
+            'pending': 'En attente',
+            'approved': 'Approuvé',
+            'rejected': 'Rejeté',
+            None: 'En attente'
+        }
+        return labels.get(getattr(obj, 'statut_approbation', None), 'En attente')
 
 
 class PartenaireSerializer(serializers.ModelSerializer):
@@ -636,50 +679,65 @@ class RessourceSerializer(serializers.ModelSerializer):
         return [p.nom for p in obj.projet.all()]
     
 
+# ramaqs_management_plateforme/serializers.py
+
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import authenticate
+from rest_framework import serializers
+
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     
     def validate(self, attrs):
         # Récupérer l'email et le password
         email = attrs.get('email', attrs.get('username'))
         password = attrs.get('password')
+        print(f"🔐 Tentative de connexion: email={email}")
         
         # Authentifier avec l'email
         user = authenticate(username=email, password=password)
         
         if not user:
+            print(f"❌ Utilisateur non trouvé ou mot de passe incorrect: {email}")
             raise serializers.ValidationError('Email ou mot de passe incorrect')
         
         if not user.is_active:
+            print(f"❌ Compte désactivé: {email}")
             raise serializers.ValidationError('Compte désactivé')
         
-        # Générer le token
+        print(f"✅ Utilisateur authentifié: {user.email}, rôle: {user.role}")
+        
+        # Générer les tokens
         refresh = RefreshToken.for_user(user)
         
-        data = {
-            'access': str(refresh.access_token),
-            
-        }
-        
-        # Ajouter les informations du tenant
+        # Récupérer le membership
+        membership = None
         if hasattr(user, 'memberships') and user.memberships.exists():
             membership = user.memberships.first()
-            data['tenant_id'] = str(membership.tenant.id)
-            data['tenant_slug'] = membership.tenant.slug
-            data['tenant_name'] = membership.tenant.nom
-            data['user_role'] = membership.role
         
-        # Ajouter les infos utilisateur
-        data['user'] = {
-            'id': str(user.id),
-            'nom': user.get_full_name() or user.nom,
-            'email': user.email,
-            'role': membership.role if user.memberships.exists() else None
+        # ✅ STRUCTURE DE RÉPONSE CORRECTE (sans doublons)
+        data = {
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'user': {
+                'id': str(user.id),
+                'nom': user.nom,
+                'email': user.email,
+                'role': membership.role if membership else user.role,
+                'is_active': user.is_active,
+                'statut_approbation': getattr(user, 'statut_approbation', None),
+            }
         }
         
-        data['tenant'] = {
-            'id': str(membership.tenant.id),
-            'nom': membership.tenant.nom,
-            'slug': membership.tenant.slug,
-        }
+        # Ajouter les infos tenant si disponible
+        if membership and membership.tenant:
+            data['tenant'] = {
+                'id': str(membership.tenant.id),
+                'nom': membership.tenant.nom,
+                'slug': getattr(membership.tenant, 'slug', None),
+            }
+        
+        print(f"✅ Connexion réussie pour {user.email}")
+        print(f"📤 Réponse envoyée: access={data['access'][:50]}...")
         
         return data

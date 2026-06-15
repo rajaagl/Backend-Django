@@ -119,6 +119,28 @@ class Utilisateur(AbstractUser):
     
     def is_super_admin(self):
         return self.is_superuser or self.memberships.filter(role=RoleChoices.SUPER_ADMIN).exists()
+    
+    # ✅ Pour la gestion des clients
+    statut_approbation = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'En attente'),
+            ('approved', 'Approuvé'),
+            ('rejected', 'Rejeté'),
+        ],
+        default='approved',
+        blank=True,
+        null=True
+    )
+    justification_rejet = models.TextField(blank=True, null=True)
+    date_approbation = models.DateTimeField(blank=True, null=True)
+    approuve_par = models.ForeignKey(
+        'self', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='clients_approuves'
+    )
 
 
 # ========== MODÈLES SPÉCIFIQUES (PROXY) ==========
@@ -164,7 +186,7 @@ class Partenaire(Utilisateur):
         return f"{self.nom} - Partenaire"
 
 
-# ========== MODÈLES MÉTIER ==========
+# ========== projet ==========----------------------------------------------------------------------------
 
 class Projet(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -196,7 +218,7 @@ class Projet(models.Model):
     def __str__(self):
         return f"{self.nom} - {self.tenant.nom}"
 
-
+#------------------------------------------------tache-------------------------------------------------------------
 class Tache(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE)
